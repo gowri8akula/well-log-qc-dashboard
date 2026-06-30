@@ -93,3 +93,65 @@ def check_depth_gaps(df, depth_col="DEPT", expected_step=None, tolerance=1.5):
         })
     
     return issues
+
+
+def check_flat_lines(df, depth_col="DEPT", window=10, threshold=0.001):
+    """
+    Detect stuck-sensor segments where values barely change.
+    
+    Args:
+        df: pandas DataFrame with well log data
+        depth_col: name of the depth column
+        window: number of consecutive samples to check
+        threshold: max standard deviation to call it "flat"
+        
+    Returns:
+        issues: list of dictionaries describing each flat segment found
+    """
+    issues = []
+    
+    for col in df.columns:
+        if col == depth_col:
+            continue
+        
+        # Calculate rolling standard deviation
+        rolling_std = df[col].rolling(window=window).std()
+        
+        # Flag windows where std deviation is below threshold
+        is_flat = rolling_std < threshold
+        
+        # Skip if no flat segments found
+        if not is_flat.any():
+            continue
+        
+        # Find where flat segments start and end
+        flat_indices = df.index[is_flat]
+        
+        # Group consecutive flat indices into segments
+        groups = []
+        current_group = [flat_indices[0]]
+        
+        for idx in flat_indices[1:]:
+            if idx == current_group[-1] + 1:
+                current_group.append(idx)
+            else:
+                groups.append(current_group)
+                current_group = [idx]
+        groups.append(current_group)
+        
+        # Create one issue per flat segment
+        for group in groups:
+            start_idx = group[0]
+            end_idx = group[-1]
+            
+            issues.append({
+                "curve":        col,
+                "issue_type":   "flat_line",
+                "severity":     "warning",
+                "count":        len(group),
+                "depth_start":  float(df.loc[start_idx, depth_col]),
+                "depth_end":    float(df.loc[end_idx, depth_col]),
+                "message":      f"{col} is flat for {len(group)} samples (possible stuck sensor)"
+            })
+    
+    return issues
