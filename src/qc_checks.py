@@ -50,3 +50,46 @@ def check_nulls(df, null_value=-999.25, depth_col="DEPT"):
             })
     
     return issues
+
+
+def check_depth_gaps(df, depth_col="DEPT", expected_step=None, tolerance=1.5):
+    """
+    Find irregular depth intervals (skipped readings).
+    
+    Args:
+        df: pandas DataFrame with well log data
+        depth_col: name of the depth column
+        expected_step: the normal depth step (e.g. 0.05). If None, auto-detected.
+        tolerance: how many times bigger than expected_step counts as a gap
+        
+    Returns:
+        issues: list of dictionaries describing each gap found
+    """
+    issues = []
+    
+    depths = df[depth_col].values
+    
+    # Calculate the difference between consecutive depths
+    diffs = np.diff(depths)
+    
+    # Auto-detect the expected step if not provided
+    if expected_step is None:
+        expected_step = np.median(diffs)
+    
+    # A gap is any difference bigger than expected_step * tolerance
+    gap_threshold = expected_step * tolerance
+    gap_indices = np.where(diffs > gap_threshold)[0]
+    
+    for idx in gap_indices:
+        gap_size = diffs[idx]
+        issues.append({
+            "curve":        depth_col,
+            "issue_type":   "depth_gap",
+            "severity":     "critical",
+            "count":        1,
+            "depth_start":  float(depths[idx]),
+            "depth_end":    float(depths[idx + 1]),
+            "message":      f"Depth gap of {gap_size:.3f} between {depths[idx]:.2f} and {depths[idx+1]:.2f}"
+        })
+    
+    return issues
