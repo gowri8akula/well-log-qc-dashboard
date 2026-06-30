@@ -155,3 +155,51 @@ def check_flat_lines(df, depth_col="DEPT", window=10, threshold=0.001):
             })
     
     return issues
+
+
+def check_spikes(df, depth_col="DEPT", zscore_threshold=3.5):
+    """
+    Detect abnormal spikes using z-score statistics.
+    
+    Args:
+        df: pandas DataFrame with well log data
+        depth_col: name of the depth column
+        zscore_threshold: how many std deviations counts as a spike
+        
+    Returns:
+        issues: list of dictionaries describing each spike found
+    """
+    issues = []
+    
+    for col in df.columns:
+        if col == depth_col:
+            continue
+        
+        series = df[col]
+        
+        # Skip curves with no variation (avoids division by zero)
+        if series.std() == 0 or series.std() is None:
+            continue
+        
+        # Calculate z-scores for every value in this curve
+        z_scores = (series - series.mean()) / series.std()
+        
+        # Find rows where the absolute z-score exceeds the threshold
+        is_spike = z_scores.abs() > zscore_threshold
+        spike_count = is_spike.sum()
+        
+        if spike_count > 0:
+            spike_depths = df.loc[is_spike, depth_col]
+            spike_values = series[is_spike]
+            
+            issues.append({
+                "curve":        col,
+                "issue_type":   "spike",
+                "severity":     "warning",
+                "count":        int(spike_count),
+                "depth_start":  float(spike_depths.min()),
+                "depth_end":    float(spike_depths.max()),
+                "message":      f"{col} has {spike_count} spike(s), values up to {spike_values.abs().max():.2f}"
+            })
+    
+    return issues
