@@ -203,3 +203,63 @@ def check_spikes(df, depth_col="DEPT", zscore_threshold=3.5):
             })
     
     return issues
+
+
+def check_range_violations(df, curve_ranges, curve_aliases, depth_col="DEPT"):
+    """
+    Check if curve values fall outside expected industry-standard ranges.
+    Uses curve_aliases to match non-standard curve names to standard ones.
+    
+    Args:
+        df: pandas DataFrame with well log data
+        curve_ranges: dict of standard curve names to {min, max, unit}
+        curve_aliases: dict of standard curve names to list of alternate names
+        depth_col: name of the depth column
+        
+    Returns:
+        issues: list of dictionaries describing each range violation found
+    """
+    issues = []
+    
+    # Build a lookup: actual column name -> standard curve name
+    column_to_standard = {}
+    for col in df.columns:
+        if col == depth_col:
+            continue
+        
+        # Check if this column name IS already a standard name
+        if col in curve_ranges:
+            column_to_standard[col] = col
+            continue
+        
+        # Check if this column name is an ALIAS for a standard name
+        for standard_name, aliases in curve_aliases.items():
+            if col in aliases:
+                column_to_standard[col] = standard_name
+                break
+    
+    # Now check each matched column against its standard range
+    for col, standard_name in column_to_standard.items():
+        bounds = curve_ranges[standard_name]
+        series = df[col]
+        
+        is_violation = (series < bounds["min"]) | (series > bounds["max"])
+        violation_count = is_violation.sum()
+        
+        if violation_count > 0:
+            violation_depths = df.loc[is_violation, depth_col]
+            violation_values = series[is_violation]
+            
+            issues.append({
+                "curve":        col,
+                "issue_type":   "range_violation",
+                "severity":     "critical",
+                "count":        int(violation_count),
+                "depth_start":  float(violation_depths.min()),
+                "depth_end":    float(violation_depths.max()),
+                "message":      f"{col} (mapped to {standard_name}) has {violation_count} value(s) "
+                                 f"outside range [{bounds['min']}, {bounds['max']}] {bounds['unit']}. "
+                                 f"Extreme value: {violation_values.iloc[0]:.2f}"
+            })
+    
+    return issues
