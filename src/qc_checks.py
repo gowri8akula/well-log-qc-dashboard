@@ -263,3 +263,55 @@ def check_range_violations(df, curve_ranges, curve_aliases, depth_col="DEPT"):
             })
     
     return issues
+
+
+def run_all_checks(df, null_value=-999.25, depth_col="DEPT",
+                   curve_ranges=None, curve_aliases=None):
+    """
+    Run all QC checks and return a unified issues DataFrame.
+    
+    Args:
+        df: pandas DataFrame with well log data
+        null_value: the null value used in the LAS file
+        depth_col: name of the depth column
+        curve_ranges: dict of standard curve ranges from config
+        curve_aliases: dict of curve aliases from config
+        
+    Returns:
+        issues_df: pandas DataFrame with all issues found
+    """
+    import pandas as pd
+    from src.config import CURVE_RANGES, CURVE_ALIASES
+    
+    # Use config defaults if not provided
+    if curve_ranges is None:
+        curve_ranges = CURVE_RANGES
+    if curve_aliases is None:
+        curve_aliases = CURVE_ALIASES
+    
+    all_issues = []
+    
+    # Run every QC check
+    all_issues += check_nulls(df, null_value, depth_col)
+    all_issues += check_depth_gaps(df, depth_col)
+    all_issues += check_flat_lines(df, depth_col)
+    all_issues += check_spikes(df, depth_col)
+    all_issues += check_range_violations(df, curve_ranges, curve_aliases, depth_col)
+    
+    # Convert to DataFrame
+    if len(all_issues) == 0:
+        return pd.DataFrame(columns=[
+            "curve", "issue_type", "severity",
+            "count", "depth_start", "depth_end", "message"
+        ])
+    
+    issues_df = pd.DataFrame(all_issues)
+    
+    # Sort by severity first (critical before warning), then by depth
+    severity_order = {"critical": 0, "warning": 1}
+    issues_df["severity_rank"] = issues_df["severity"].map(severity_order)
+    issues_df = issues_df.sort_values(
+        ["severity_rank", "depth_start"]
+    ).drop(columns="severity_rank").reset_index(drop=True)
+    
+    return issues_df
